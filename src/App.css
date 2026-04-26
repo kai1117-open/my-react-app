@@ -1107,3 +1107,123 @@ img { display: block; max-width: 100%; height: auto; }
   background: var(--red);
   color: #fff;
 }
+/* ============================================================
+   Phase 2: ログイン画面 / ログアウトボタン / ローディング
+   ============================================================ */
+.app-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  color: var(--text-2);
+  font-size: 16px;
+}
+
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(135deg, #ffe1ee 0%, #fef3e2 50%, #e3f5ff 100%);
+}
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  background: #fff;
+  border-radius: 24px;
+  padding: 32px 24px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.login-card h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  text-align: center;
+  background: linear-gradient(135deg,#e060a0,#f0a060);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.login-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2, #777);
+  text-align: center;
+}
+.login-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-2, #555);
+}
+.login-label input {
+  padding: 12px 14px;
+  border: 2px solid var(--border, #e0e0e0);
+  border-radius: 12px;
+  font-size: 15px;
+  background: #faf8f8;
+}
+.login-label input:focus {
+  outline: none;
+  border-color: #e060a0;
+  background: #fff;
+}
+.login-error {
+  background: #ffe5ec;
+  border: 1px solid #ffb0c4;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #c0335a;
+}
+.login-submit {
+  margin-top: 8px;
+  padding: 14px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(135deg,#e060a0,#f0a060);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.1s ease, opacity 0.2s ease;
+}
+.login-submit:hover {
+  transform: translateY(-1px);
+}
+.login-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sign-out-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: rgba(255,255,255,0.85);
+  border: 1px solid var(--border, #e0e0e0);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-2, #555);
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.sign-out-btn:hover {
+  background: #fff;
+  color: #c0335a;
+}
+.sign-out-label {
+  font-size: 11px;
+}
