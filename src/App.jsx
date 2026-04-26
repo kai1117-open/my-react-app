@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
+import Login from './components/Login'
+import { useAuth } from './hooks/useAuth'
+import { useCoupleAppData } from './hooks/useCoupleAppData'
+import { supabase } from './lib/supabase'
 
 // localStorage と同期する useState フック。
 // 初回マウント時に読み込み、変更時に書き戻す。SSR/プライベートモードでも安全に動くよう try/catch で防御。
@@ -670,17 +674,38 @@ function DayDetailModal({
   )
 }
 
+// トップレベルコンポーネント: 認証ゲート
 export default function App() {
+  const { session, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div className="app-root">
+        <div className="app-loading">読み込み中…</div>
+      </div>
+    )
+  }
+  if (!session) return <Login />
+  return <CoupleApp />
+}
+
+// ログイン後の本体コンポーネント
+function CoupleApp() {
   const [activeTab, setActiveTab] = useState('calendar')
   const [innerTab, setInnerTab] = useState('detail')
   const [viewYear, setViewYear] = useState(TODAY.getFullYear())
   const [viewMonth, setViewMonth] = useState(TODAY.getMonth())
   const [placeFilter, setPlaceFilter] = useState('all')
 
-  const [settings, setSettings] = usePersistentState('settings', initialSettings)
-  const [transactions, setTransactions] = usePersistentState('transactions', initialTransactions)
-  const [places, setPlaces] = usePersistentState('places', initialPlaces)
-  const [schedules, setSchedules] = usePersistentState('schedules', initialSchedules)
+  // Phase 2: Supabase に保存される共有データ。
+  // App.jsx 既存の setter 呼び出し (prev => ...) と互換のセッターを返す。
+  const {
+    loading: dataLoading,
+    transactions, setTransactions,
+    places, setPlaces,
+    schedules, setSchedules,
+    settings, setSettings,
+  } = useCoupleAppData()
 
   const [modal, setModal] = useState(null)
 
@@ -1082,9 +1107,21 @@ export default function App() {
     )
   }
 
+  if (dataLoading) {
+    return (
+      <div className="app-root">
+        <div className="app-loading">読み込み中…</div>
+      </div>
+    )
+  }
+
   return (
     <div className="app-root">
       <div className="app-frame">
+        <button className="sign-out-btn" onClick={() => supabase.auth.signOut()} title="ログアウト">
+          <span aria-hidden="true">⎋</span>
+          <span className="sign-out-label">ログアウト</span>
+        </button>
         <TopActionBar
           onAddIncome={() => openIncomeModal()}
           onAddExpense={() => openExpenseModal()}

@@ -3,7 +3,9 @@ frontend:
   phases:
     preBuild:
       commands:
-        - npm ci
+        # package-lock.json と package.json の整合を保つため install を使用
+        # (新規依存追加直後でも package-lock.json の手動更新なしでビルドが通る)
+        - npm install --no-audit --no-fund
     build:
       commands:
         - npm run build
