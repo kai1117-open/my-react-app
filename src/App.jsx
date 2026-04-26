@@ -1,5 +1,35 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import './App.css'
+
+// localStorage と同期する useState フック。
+// 初回マウント時に読み込み、変更時に書き戻す。SSR/プライベートモードでも安全に動くよう try/catch で防御。
+const STORAGE_PREFIX = 'couple-app:v1:'
+function usePersistentState(key, initialValue) {
+  const storageKey = STORAGE_PREFIX + key
+  const [value, setValue] = useState(() => {
+    if (typeof window === 'undefined') return initialValue
+    try {
+      const raw = window.localStorage.getItem(storageKey)
+      if (raw === null) return initialValue
+      return JSON.parse(raw)
+    } catch (err) {
+      console.warn('[couple-app] localStorage read failed for', storageKey, err)
+      return initialValue
+    }
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(value))
+    } catch (err) {
+      // QuotaExceededError 等。画像 Base64 が大きすぎる場合に発生し得る。
+      console.warn('[couple-app] localStorage write failed for', storageKey, err)
+    }
+  }, [storageKey, value])
+
+  return [value, setValue]
+}
 
 const TODAY = new Date(2026, 3, 26)
 
@@ -647,10 +677,10 @@ export default function App() {
   const [viewMonth, setViewMonth] = useState(TODAY.getMonth())
   const [placeFilter, setPlaceFilter] = useState('all')
 
-  const [settings, setSettings] = useState(initialSettings)
-  const [transactions, setTransactions] = useState(initialTransactions)
-  const [places, setPlaces] = useState(initialPlaces)
-  const [schedules, setSchedules] = useState(initialSchedules)
+  const [settings, setSettings] = usePersistentState('settings', initialSettings)
+  const [transactions, setTransactions] = usePersistentState('transactions', initialTransactions)
+  const [places, setPlaces] = usePersistentState('places', initialPlaces)
+  const [schedules, setSchedules] = usePersistentState('schedules', initialSchedules)
 
   const [modal, setModal] = useState(null)
 
