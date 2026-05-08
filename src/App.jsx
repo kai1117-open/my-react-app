@@ -1,41 +1,19 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import Login from './components/Login'
 import { useAuth } from './hooks/useAuth'
 import { useCoupleAppData } from './hooks/useCoupleAppData'
 import { supabase } from './lib/supabase'
 
-// localStorage と同期する useState フック。
-// 初回マウント時に読み込み、変更時に書き戻す。SSR/プライベートモードでも安全に動くよう try/catch で防御。
-const STORAGE_PREFIX = 'couple-app:v1:'
-function usePersistentState(key, initialValue) {
-  const storageKey = STORAGE_PREFIX + key
-  const [value, setValue] = useState(() => {
-    if (typeof window === 'undefined') return initialValue
-    try {
-      const raw = window.localStorage.getItem(storageKey)
-      if (raw === null) return initialValue
-      return JSON.parse(raw)
-    } catch (err) {
-      console.warn('[couple-app] localStorage read failed for', storageKey, err)
-      return initialValue
-    }
-  })
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(value))
-    } catch (err) {
-      // QuotaExceededError 等。画像 Base64 が大きすぎる場合に発生し得る。
-      console.warn('[couple-app] localStorage write failed for', storageKey, err)
-    }
-  }, [storageKey, value])
-
-  return [value, setValue]
+const pad2 = (n) => String(n).padStart(2, '0')
+const getLocalDateString = (date = new Date()) => (
+  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+)
+const parseLocalDateString = (dateStr) => {
+  const [year, month, day] = String(dateStr || '').split('-').map(Number)
+  return new Date(year || 1970, (month || 1) - 1, day || 1)
 }
-
-const TODAY = new Date(2026, 3, 26)
+const getToday = () => new Date()
 
 const GENRE_GRADIENT = {
   公園: 'linear-gradient(135deg,#b8f0d4,#52c787)',
@@ -63,50 +41,51 @@ const EMOJI_MAP = {
   映画館: '🎬',
 }
 
-const initialSettings = {
-  expenseCategories: ['家賃', '食費', '外食', '交通費', '娯楽', '日用品', '医療', '衣類', '通信費', '保険'],
-  incomeCategories: ['給与', '副収入', 'ボーナス', '投資', 'その他'],
-  placeGenres: ['公園', '観光', 'カフェ', '美術館', 'アウトドア', '動物園', 'レストラン', '温泉', 'ショッピング', '映画館'],
-  scheduleCategories: ['デート', '買い物', '旅行', '家事', '支払い', 'イベント', 'その他'],
-}
-
-const initialTransactions = [
-  { id: 1, type: 'income', amount: 280000, category: '給与', date: '2026-04-25', memo: '4月分給与', createdAt: '2026-04-25', updatedAt: '2026-04-25' },
-  { id: 2, type: 'income', amount: 45000, category: '副収入', date: '2026-04-18', memo: 'フリーランス案件', createdAt: '2026-04-18', updatedAt: '2026-04-18' },
-  { id: 3, type: 'expense', amount: 85000, category: '家賃', date: '2026-04-01', memo: '4月家賃', createdAt: '2026-04-01', updatedAt: '2026-04-01' },
-  { id: 4, type: 'expense', amount: 14200, category: '食費', date: '2026-04-14', memo: 'スーパーまとめ買い', createdAt: '2026-04-14', updatedAt: '2026-04-14' },
-  { id: 5, type: 'expense', amount: 7600, category: '外食', date: '2026-04-19', memo: 'イタリアンディナー', createdAt: '2026-04-19', updatedAt: '2026-04-19' },
-  { id: 6, type: 'expense', amount: 3200, category: '交通費', date: '2026-04-10', memo: '電車代', createdAt: '2026-04-10', updatedAt: '2026-04-10' },
-  { id: 7, type: 'expense', amount: 5400, category: '娯楽', date: '2026-04-22', memo: '映画・ポップコーン', createdAt: '2026-04-22', updatedAt: '2026-04-22' },
-  { id: 8, type: 'expense', amount: 12800, category: '日用品', date: '2026-04-08', memo: 'ニトリ', createdAt: '2026-04-08', updatedAt: '2026-04-08' },
-  { id: 9, type: 'expense', amount: 3800, category: '食費', date: '2026-04-24', memo: 'コンビニ', createdAt: '2026-04-24', updatedAt: '2026-04-24' },
-  { id: 10, type: 'income', amount: 280000, category: '給与', date: '2026-03-25', memo: '3月分給与', createdAt: '2026-03-25', updatedAt: '2026-03-25' },
-  { id: 11, type: 'expense', amount: 85000, category: '家賃', date: '2026-03-01', memo: '3月家賃', createdAt: '2026-03-01', updatedAt: '2026-03-01' },
-  { id: 12, type: 'expense', amount: 9800, category: '食費', date: '2026-03-12', memo: 'スーパー', createdAt: '2026-03-12', updatedAt: '2026-03-12' },
-  { id: 13, type: 'expense', amount: 5200, category: '外食', date: '2026-03-15', memo: 'ランチ', createdAt: '2026-03-15', updatedAt: '2026-03-15' },
-  { id: 14, type: 'expense', amount: 3200, category: '交通費', date: '2026-03-08', memo: '電車代', createdAt: '2026-03-08', updatedAt: '2026-03-08' },
-  { id: 15, type: 'expense', amount: 22000, category: '娯楽', date: '2026-03-20', memo: '旅行費', createdAt: '2026-03-20', updatedAt: '2026-03-20' },
-  { id: 16, type: 'expense', amount: 6500, category: '日用品', date: '2026-03-05', memo: '薬局', createdAt: '2026-03-05', updatedAt: '2026-03-05' },
-]
-
-const initialPlaces = [
-  { id: 1, name: '新宿御苑', genre: '公園', targetDate: '2026-05-10', visitedDate: '', address: '新宿区内藤町11', memo: '', images: [], emoji: '🌸', status: 'want', createdAt: '2026-04-01', updatedAt: '2026-04-01' },
-  { id: 2, name: '浅草寺', genre: '観光', targetDate: '2026-04-20', visitedDate: '2026-04-20', address: '台東区浅草2-3-1', memo: '仲見世も楽しかった', images: [], emoji: '⛩️', status: 'visited', createdAt: '2026-04-01', updatedAt: '2026-04-20' },
-  { id: 3, name: 'cafe marble 仏光寺', genre: 'カフェ', targetDate: '2026-06-01', visitedDate: '', address: '京都市下京区', memo: '', images: [], emoji: '☕', status: 'want', createdAt: '2026-04-01', updatedAt: '2026-04-01' },
-  { id: 4, name: '箱根ガラスの森', genre: '美術館', targetDate: '2026-07-15', visitedDate: '', address: '神奈川県足柄下郡箱根町', memo: '', images: [], emoji: '🎨', status: 'want', createdAt: '2026-04-01', updatedAt: '2026-04-01' },
-  { id: 5, name: '長谷寺（鎌倉）', genre: '観光', targetDate: '2026-06-20', visitedDate: '2026-06-20', address: '鎌倉市長谷3-11-2', memo: '', images: [], emoji: '🪷', status: 'visited', createdAt: '2026-04-01', updatedAt: '2026-06-20' },
-  { id: 6, name: 'bills 七里ヶ浜', genre: 'カフェ', targetDate: '2026-05-30', visitedDate: '', address: '鎌倉市七里ガ浜東', memo: '', images: [], emoji: '🥞', status: 'want', createdAt: '2026-04-01', updatedAt: '2026-04-01' },
-  { id: 7, name: '富士山五合目', genre: 'アウトドア', targetDate: '2026-08-01', visitedDate: '', address: '富士宮市粟倉', memo: '', images: [], emoji: '🗻', status: 'want', createdAt: '2026-04-01', updatedAt: '2026-04-01' },
-  { id: 8, name: '上野動物園', genre: '動物園', targetDate: '2026-05-05', visitedDate: '2026-05-05', address: '台東区上野公園9-83', memo: 'パンダが可愛かった', images: [], emoji: '🐼', status: 'visited', createdAt: '2026-04-01', updatedAt: '2026-05-05' },
-]
-
-const initialSchedules = []
-
 const fmtNum = (n) => Number(n).toLocaleString('ja-JP')
 const getDays = (y, m) => new Date(y, m + 1, 0).getDate()
 const firstDow = (y, m) => new Date(y, m, 1).getDay()
-const nowIso = () => new Date().toISOString().slice(0, 10)
+const nowIso = () => getLocalDateString()
 const genId = () => Date.now() + Math.floor(Math.random() * 1000)
+const isSameMonthString = (dateStr, year, month) => {
+  const d = parseLocalDateString(dateStr)
+  return d.getFullYear() === year && d.getMonth() === month
+}
+const getPreviousMonth = (year, month) => (
+  month === 0 ? { year: year - 1, month: 11 } : { year, month: month - 1 }
+)
+const isSameMonth = (year, month, baseYear, baseMonth) => year === baseYear && month === baseMonth
+const getAnalysisEndDay = (year, month, today = getToday()) => {
+  if (isSameMonth(year, month, today.getFullYear(), today.getMonth())) return today.getDate()
+  return getDays(year, month)
+}
+const calcRate = (current, previous) => {
+  if (previous === 0) return current === 0 ? 0 : null
+  return ((current - previous) / Math.abs(previous)) * 100
+}
+const formatRate = (rate) => (rate === null ? '新規' : `${rate >= 0 ? '+' : ''}${rate.toFixed(1)}%`)
+const formatPeriodLabel = (label, year, startMonth, endDay) => (
+  `${label}: ${year}年${startMonth + 1}月1日〜${startMonth + 1}月${endDay}日`
+)
+const URL_PATTERN = /(https?:\/\/[^\s<>"']+)/g
+const renderTextWithLinks = (text) => {
+  if (!text) return '—'
+  const parts = String(text).split(URL_PATTERN)
+  return parts.map((part, index) => {
+    if (!/^https?:\/\//.test(part)) return part
+    return (
+      <a
+        className="text-link"
+        href={part}
+        target="_blank"
+        rel="noreferrer"
+        key={`${part}-${index}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {part}
+      </a>
+    )
+  })
+}
 
 function Modal({ children, center = false, onClose }) {
   return (
@@ -158,13 +137,11 @@ function TabBar({ active, onSelect }) {
   )
 }
 
-function TopActionBar({ onAddIncome, onAddExpense, onAddSchedule, onAddPlace }) {
+function TopActionBar({ onAddIncome, onAddExpense }) {
   return (
     <div className="top-action-bar">
-      <button className="top-btn top-btn-income" onClick={onAddIncome}>＋ 収入</button>
-      <button className="top-btn top-btn-expense" onClick={onAddExpense}>＋ 支出</button>
-      <button className="top-btn top-btn-schedule" onClick={onAddSchedule}>＋ 予定</button>
-      <button className="top-btn top-btn-place" onClick={onAddPlace}>＋ 行きたい</button>
+      <button className="top-btn top-btn-income" onClick={onAddIncome}>収入</button>
+      <button className="top-btn top-btn-expense" onClick={onAddExpense}>支出</button>
     </div>
   )
 }
@@ -172,14 +149,14 @@ function TopActionBar({ onAddIncome, onAddExpense, onAddSchedule, onAddPlace }) 
 function TransactionFormModal({ type, categories, existing, defaultDate, onClose, onSubmit }) {
   const [amount, setAmount] = useState(existing ? String(existing.amount) : '')
   const [category, setCategory] = useState(existing ? existing.category : categories[0] || '')
-  const [date, setDate] = useState(existing ? existing.date : defaultDate || TODAY.toISOString().slice(0, 10))
+  const [date, setDate] = useState(existing ? existing.date : defaultDate || getLocalDateString())
   const [memo, setMemo] = useState(existing ? existing.memo : '')
   const [errors, setErrors] = useState({})
   const title = type === 'income' ? '💚 収入を追加' : '🌸 支出を追加'
 
   const handleSubmit = () => {
     const nextErrors = {}
-    const amountNum = parseInt(amount, 10)
+    const amountNum = Number(amount)
 
     if (!amount || Number.isNaN(amountNum) || amountNum <= 0) nextErrors.amount = '金額は1円以上で入力してください'
     if (!category) nextErrors.category = 'カテゴリーを選択してください'
@@ -190,7 +167,7 @@ function TransactionFormModal({ type, categories, existing, defaultDate, onClose
     if (Object.keys(nextErrors).length) return
 
     onSubmit({
-      amount: amountNum,
+      amount: Math.floor(amountNum),
       category,
       date,
       memo: memo.trim(),
@@ -267,7 +244,7 @@ function TransactionFormModal({ type, categories, existing, defaultDate, onClose
 
 function ScheduleFormModal({ categories, existing, defaultDate, onClose, onSubmit }) {
   const [title, setTitle] = useState(existing ? existing.title : '')
-  const [date, setDate] = useState(existing ? existing.date : defaultDate || TODAY.toISOString().slice(0, 10))
+  const [date, setDate] = useState(existing ? existing.date : defaultDate || getLocalDateString())
   const [category, setCategory] = useState(existing ? existing.category : categories[0] || '')
   const [memo, setMemo] = useState(existing ? existing.memo : '')
   const [errors, setErrors] = useState({})
@@ -485,7 +462,7 @@ function TransactionDetailModal({ tx, onClose, onEdit, onDelete }) {
       <div className={`detail-amount-big ${tx.type}`}>{tx.type === 'income' ? '+' : '−'}¥{fmtNum(tx.amount)}</div>
       <div className="detail-row"><span className="detail-label">カテゴリー</span><span className="detail-value">{tx.category}</span></div>
       <div className="detail-row"><span className="detail-label">日付</span><span className="detail-value">{tx.date}</span></div>
-      <div className="detail-row"><span className="detail-label">メモ</span><span className="detail-value">{tx.memo || '—'}</span></div>
+      <div className="detail-row"><span className="detail-label">メモ</span><span className="detail-value">{renderTextWithLinks(tx.memo)}</span></div>
       <div className="btn-row">
         <button className="btn-edit" onClick={onEdit}>✏️ 編集</button>
         <button className="btn-delete" onClick={onDelete}>🗑 削除</button>
@@ -502,7 +479,7 @@ function ScheduleDetailModal({ schedule, onClose, onEdit, onDelete }) {
       <div className="detail-row"><span className="detail-label">タイトル</span><span className="detail-value detail-strong">{schedule.title}</span></div>
       <div className="detail-row"><span className="detail-label">日付</span><span className="detail-value">{schedule.date}</span></div>
       <div className="detail-row"><span className="detail-label">カテゴリー</span><span className="detail-value">{schedule.category}</span></div>
-      <div className="detail-row"><span className="detail-label">メモ</span><span className="detail-value">{schedule.memo || '—'}</span></div>
+      <div className="detail-row"><span className="detail-label">メモ</span><span className="detail-value">{renderTextWithLinks(schedule.memo)}</span></div>
       <div className="btn-row">
         <button className="btn-edit" onClick={onEdit}>✏️ 編集</button>
         <button className="btn-delete" onClick={onDelete}>🗑 削除</button>
@@ -546,8 +523,8 @@ function PlaceDetailModal({ place, onClose, onEdit, onDelete, onStampVisited }) 
       <div className="detail-row"><span className="detail-label">ジャンル</span><span className="detail-value">{place.genre}</span></div>
       <div className="detail-row"><span className="detail-label">目安日</span><span className="detail-value">{place.targetDate || '—'}</span></div>
       {place.visitedDate && <div className="detail-row"><span className="detail-label">訪問日</span><span className="detail-value">{place.visitedDate}</span></div>}
-      <div className="detail-row"><span className="detail-label">住所</span><span className="detail-value">{place.address || '—'}</span></div>
-      <div className="detail-row"><span className="detail-label">メモ</span><span className="detail-value">{place.memo || '—'}</span></div>
+      <div className="detail-row"><span className="detail-label">住所</span><span className="detail-value">{renderTextWithLinks(place.address)}</span></div>
+      <div className="detail-row"><span className="detail-label">メモ</span><span className="detail-value">{renderTextWithLinks(place.memo)}</span></div>
 
       {place.status === 'want' && (
         <button className="btn-stamp" onClick={onStampVisited}>🗺️ 行ったスタンプを押す</button>
@@ -611,6 +588,16 @@ function CategoryDetailModal({ title, name, onClose, onEdit, onDelete }) {
   )
 }
 
+function Toast({ toast }) {
+  if (!toast) return null
+  return (
+    <div className="toast">
+      <div className="toast-title">{toast.title}</div>
+      {toast.message && <div className="toast-message">{toast.message}</div>}
+    </div>
+  )
+}
+
 function DayDetailModal({
   dateStr,
   dayIncome,
@@ -620,7 +607,6 @@ function DayDetailModal({
   onAddIncome,
   onAddExpense,
   onAddSchedule,
-  onAddPlace,
 }) {
   const txItemHtml = (arr, type) => (
     arr.length ? (
@@ -628,7 +614,7 @@ function DayDetailModal({
         <div className="day-tx-item" key={t.id}>
           <div>
             <span className={`day-tx-cat ${type}`}>{t.category}</span>
-            <div className="day-tx-memo">{t.memo}</div>
+            <div className="day-tx-memo">{renderTextWithLinks(t.memo)}</div>
           </div>
           <span className={`day-tx-amount ${type}`}>{type === 'income' ? '+' : '−'}¥{fmtNum(t.amount)}</span>
         </div>
@@ -643,10 +629,9 @@ function DayDetailModal({
       <h3 className="modal-title">{dateStr.replaceAll('-', '年').replace(/年(\d{2})$/, '月$1日')}</h3>
 
       <div className="day-action-row">
-        <button className="day-action-btn income" onClick={onAddIncome}>＋ 収入</button>
-        <button className="day-action-btn expense" onClick={onAddExpense}>＋ 支出</button>
-        <button className="day-action-btn schedule" onClick={onAddSchedule}>＋ 予定</button>
-        <button className="day-action-btn place" onClick={onAddPlace}>＋ 行きたい</button>
+        <button className="day-action-btn income" onClick={onAddIncome}>収入を追加</button>
+        <button className="day-action-btn expense" onClick={onAddExpense}>支出を追加</button>
+        <button className="day-action-btn schedule" onClick={onAddSchedule}>予定を追加</button>
       </div>
 
       <div className="day-section-title">💚 収入</div>
@@ -662,6 +647,7 @@ function DayDetailModal({
             <div>
               <span className="day-tx-cat schedule">{s.category}</span>
               <div className="day-tx-memo">{s.title}</div>
+              {s.memo && <div className="day-tx-note">{renderTextWithLinks(s.memo)}</div>}
             </div>
           </div>
         ))
@@ -691,10 +677,11 @@ export default function App() {
 
 // ログイン後の本体コンポーネント
 function CoupleApp() {
+  const today = getToday()
   const [activeTab, setActiveTab] = useState('calendar')
   const [innerTab, setInnerTab] = useState('detail')
-  const [viewYear, setViewYear] = useState(TODAY.getFullYear())
-  const [viewMonth, setViewMonth] = useState(TODAY.getMonth())
+  const [viewYear, setViewYear] = useState(today.getFullYear())
+  const [viewMonth, setViewMonth] = useState(today.getMonth())
   const [placeFilter, setPlaceFilter] = useState('all')
 
   // Phase 2: Supabase に保存される共有データ。
@@ -708,22 +695,30 @@ function CoupleApp() {
   } = useCoupleAppData()
 
   const [modal, setModal] = useState(null)
+  const [toast, setToast] = useState(null)
+  const toastTimerRef = useRef(null)
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current)
+  }, [])
+
+  const showToast = (title, message = '') => {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current)
+    setToast({ title, message })
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 1500)
+  }
 
   const monthTitle = `${viewYear}年 ${viewMonth + 1}月`
 
   const monthTransactions = useMemo(
-    () => transactions.filter((t) => {
-      const d = new Date(t.date)
-      return d.getFullYear() === viewYear && d.getMonth() === viewMonth
-    }),
+    () => transactions.filter((t) => isSameMonthString(t.date, viewYear, viewMonth)),
     [transactions, viewYear, viewMonth],
   )
 
   const monthSchedules = useMemo(
-    () => schedules.filter((s) => {
-      const d = new Date(s.date)
-      return d.getFullYear() === viewYear && d.getMonth() === viewMonth
-    }).sort((a, b) => new Date(a.date) - new Date(b.date)),
+    () => schedules
+      .filter((s) => isSameMonthString(s.date, viewYear, viewMonth))
+      .sort((a, b) => parseLocalDateString(a.date) - parseLocalDateString(b.date)),
     [schedules, viewYear, viewMonth],
   )
 
@@ -755,7 +750,8 @@ function CoupleApp() {
   const calendarCells = useMemo(() => {
     const totalDays = getDays(viewYear, viewMonth)
     const startDow = firstDow(viewYear, viewMonth)
-    const isCurrentMonth = viewYear === TODAY.getFullYear() && viewMonth === TODAY.getMonth()
+    const todayDate = getToday()
+    const isCurrentMonth = viewYear === todayDate.getFullYear() && viewMonth === todayDate.getMonth()
 
     return [
       ...Array.from({ length: startDow }).map((_, idx) => ({ key: `empty-${idx}`, empty: true })),
@@ -766,7 +762,7 @@ function CoupleApp() {
           key: day,
           day,
           dow,
-          isToday: isCurrentMonth && day === TODAY.getDate(),
+          isToday: isCurrentMonth && day === todayDate.getDate(),
           dots: dayDotMap[day],
         }
       }),
@@ -774,22 +770,26 @@ function CoupleApp() {
   }, [viewYear, viewMonth, dayDotMap])
 
   const analysisData = useMemo(() => {
-    const y = TODAY.getFullYear()
-    const m = TODAY.getMonth()
-    const d = TODAY.getDate()
-    const pm = m === 0 ? 11 : m - 1
-    const py = m === 0 ? y - 1 : y
+    const todayDate = getToday()
+    const y = viewYear
+    const m = viewMonth
+    const periodEndDay = getAnalysisEndDay(y, m, todayDate)
+    const { year: py, month: pm } = getPreviousMonth(y, m)
+    const lastPeriodEndDay = Math.min(periodEndDay, getDays(py, pm))
+    const currentLabel = isSameMonth(y, m, todayDate.getFullYear(), todayDate.getMonth()) ? '今月' : `${y}年${m + 1}月`
+    const previousLabel = '先月'
 
-    const thisTx = transactions.filter((t) => {
-      const dt = new Date(t.date)
-      return dt.getFullYear() === y && dt.getMonth() === m && dt.getDate() <= d
-    })
-    const lastTx = transactions.filter((t) => {
-      const dt = new Date(t.date)
-      return dt.getFullYear() === py && dt.getMonth() === pm && dt.getDate() <= d
+    const filterPeriod = (arr, year, month, endDay) => arr.filter((t) => {
+      const dt = parseLocalDateString(t.date)
+      return dt.getFullYear() === year && dt.getMonth() === month && dt.getDate() <= endDay
     })
 
-    const sum = (arr, type) => arr.filter((t) => t.type === type).reduce((s, t) => s + t.amount, 0)
+    const thisTx = filterPeriod(transactions, y, m, periodEndDay)
+    const lastTx = filterPeriod(transactions, py, pm, lastPeriodEndDay)
+
+    const sum = (arr, type) => arr
+      .filter((t) => t.type === type)
+      .reduce((s, t) => s + Number(t.amount || 0), 0)
 
     const thisIncome = sum(thisTx, 'income')
     const thisExpense = sum(thisTx, 'expense')
@@ -805,19 +805,72 @@ function CoupleApp() {
       last: catSum(lastTx, cat),
     }))
 
-    const lineDays = getDays(y, m)
-    const incomeDaily = Array(lineDays).fill(0)
-    const expenseDaily = Array(lineDays).fill(0)
-    thisTx.forEach((t) => {
-      const index = new Date(t.date).getDate() - 1
-      if (t.type === 'income') incomeDaily[index] += t.amount
-      else expenseDaily[index] += t.amount
-    })
+    const buildCumulative = (arr, year, month, days) => {
+      const incomeDaily = Array(days).fill(0)
+      const expenseDaily = Array(days).fill(0)
+      arr.forEach((t) => {
+        const dt = parseLocalDateString(t.date)
+        if (dt.getFullYear() !== year || dt.getMonth() !== month) return
+        const index = dt.getDate() - 1
+        if (index < 0 || index >= days) return
+        if (t.type === 'income') incomeDaily[index] += Number(t.amount || 0)
+        if (t.type === 'expense') expenseDaily[index] += Number(t.amount || 0)
+      })
+
+      let income = 0
+      let expense = 0
+      return Array.from({ length: days }).map((_, index) => {
+        income += incomeDaily[index]
+        expense += expenseDaily[index]
+        return {
+          day: index + 1,
+          income,
+          expense,
+          balance: income - expense,
+        }
+      })
+    }
+
+    const thisCumulative = buildCumulative(thisTx, y, m, periodEndDay)
+    const lastCumulative = buildCumulative(lastTx, py, pm, lastPeriodEndDay)
+    const comparisonRows = [
+      {
+        key: 'income',
+        label: '収入',
+        current: thisIncome,
+        previous: lastIncome,
+        diff: thisIncome - lastIncome,
+        rate: calcRate(thisIncome, lastIncome),
+      },
+      {
+        key: 'expense',
+        label: '支出',
+        current: thisExpense,
+        previous: lastExpense,
+        diff: thisExpense - lastExpense,
+        rate: calcRate(thisExpense, lastExpense),
+      },
+      {
+        key: 'balance',
+        label: '収支差',
+        current: thisIncome - thisExpense,
+        previous: lastIncome - lastExpense,
+        diff: (thisIncome - thisExpense) - (lastIncome - lastExpense),
+        rate: calcRate(thisIncome - thisExpense, lastIncome - lastExpense),
+      },
+    ]
 
     return {
       y,
       m,
-      d,
+      d: periodEndDay,
+      py,
+      pm,
+      lastD: lastPeriodEndDay,
+      currentLabel,
+      previousLabel,
+      currentPeriodLabel: formatPeriodLabel(currentLabel, y, m, periodEndDay),
+      previousPeriodLabel: formatPeriodLabel(previousLabel, py, pm, lastPeriodEndDay),
       thisIncome,
       thisExpense,
       lastIncome,
@@ -825,17 +878,18 @@ function CoupleApp() {
       thisBalance: thisIncome - thisExpense,
       lastBalance: lastIncome - lastExpense,
       chartData,
-      incomeDaily,
-      expenseDaily,
+      thisCumulative,
+      lastCumulative,
+      comparisonRows,
     }
-  }, [transactions])
+  }, [transactions, viewYear, viewMonth])
 
   const openIncomeModal = (existing = null, defaultDate = null) => {
     setModal({
       type: 'transaction-form',
       txType: 'income',
       existing,
-      defaultDate,
+      defaultDate: existing ? existing.date : defaultDate || getLocalDateString(),
     })
   }
 
@@ -844,7 +898,7 @@ function CoupleApp() {
       type: 'transaction-form',
       txType: 'expense',
       existing,
-      defaultDate,
+      defaultDate: existing ? existing.date : defaultDate || getLocalDateString(),
     })
   }
 
@@ -852,7 +906,7 @@ function CoupleApp() {
     setModal({
       type: 'schedule-form',
       existing,
-      defaultDate,
+      defaultDate: existing ? existing.date : defaultDate || getLocalDateString(),
     })
   }
 
@@ -884,6 +938,7 @@ function CoupleApp() {
 
   const handleTransactionSubmit = (type, payload, existing) => {
     const now = nowIso()
+    const label = type === 'income' ? '収入' : '支出'
 
     if (existing) {
       setTransactions((prev) =>
@@ -893,11 +948,13 @@ function CoupleApp() {
             : t
         )),
       )
+      showToast(`${label}を更新しました`, `${payload.memo} ${fmtNum(payload.amount)}円`)
     } else {
       setTransactions((prev) => [
         ...prev,
         { id: genId(), type, ...payload, createdAt: now, updatedAt: now },
       ])
+      showToast(`${label}を登録しました`, `${payload.memo} ${fmtNum(payload.amount)}円`)
     }
     setModal(null)
   }
@@ -913,11 +970,13 @@ function CoupleApp() {
             : s
         )),
       )
+      showToast('予定を更新しました', payload.title)
     } else {
       setSchedules((prev) => [
         ...prev,
         { id: genId(), ...payload, createdAt: now, updatedAt: now },
       ])
+      showToast('予定を登録しました', payload.title)
     }
     setModal(null)
   }
@@ -944,6 +1003,7 @@ function CoupleApp() {
             : p
         )),
       )
+      showToast('行きたい場所を更新しました', payload.name)
     } else {
       setPlaces((prev) => [
         ...prev,
@@ -962,6 +1022,7 @@ function CoupleApp() {
           updatedAt: now,
         },
       ])
+      showToast('行きたい場所を登録しました', payload.name)
     }
     setModal(null)
   }
@@ -1057,13 +1118,24 @@ function CoupleApp() {
   }
 
   const renderLineChart = () => {
-    const { incomeDaily, expenseDaily } = analysisData
-    const days = incomeDaily.length
-    const maxVal = Math.max(...incomeDaily, ...expenseDaily, 1)
+    const { thisCumulative, lastCumulative } = analysisData
+    const days = Math.max(thisCumulative.length, lastCumulative.length, 1)
+    const series = [
+      { key: 'thisIncome', values: thisCumulative.map((r) => r.income), cls: 'line-income line-current' },
+      { key: 'lastIncome', values: lastCumulative.map((r) => r.income), cls: 'line-income line-previous' },
+      { key: 'thisExpense', values: thisCumulative.map((r) => r.expense), cls: 'line-expense line-current' },
+      { key: 'lastExpense', values: lastCumulative.map((r) => r.expense), cls: 'line-expense line-previous' },
+      { key: 'thisBalance', values: thisCumulative.map((r) => r.balance), cls: 'line-balance line-current' },
+      { key: 'lastBalance', values: lastCumulative.map((r) => r.balance), cls: 'line-balance line-previous' },
+    ]
+    const allValues = series.flatMap((s) => s.values)
+    const minVal = Math.min(...allValues, 0)
+    const maxVal = Math.max(...allValues, 1)
+    const range = maxVal - minVal || 1
 
     const w = 360
     const h = 180
-    const left = 26
+    const left = 34
     const right = 8
     const top = 8
     const bottom = 24
@@ -1071,10 +1143,10 @@ function CoupleApp() {
     const ch = h - top - bottom
 
     const x = (i) => left + (cw * i / Math.max(days - 1, 1))
-    const y = (v) => top + ch - (v / maxVal) * ch
+    const y = (v) => top + ch - ((v - minVal) / range) * ch
     const makePath = (arr) => arr.map((v, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(2)} ${y(v).toFixed(2)}`).join(' ')
     const xLabels = [1, Math.max(1, Math.ceil(days / 2)), days].filter((v, i, a) => a.indexOf(v) === i)
-    const yLabels = [0, Math.round(maxVal / 2), maxVal]
+    const yLabels = [minVal, Math.round((minVal + maxVal) / 2), maxVal].filter((v, i, a) => a.indexOf(v) === i)
 
     return (
       <svg className="line-chart-svg" viewBox="0 0 360 180" preserveAspectRatio="none">
@@ -1094,14 +1166,8 @@ function CoupleApp() {
           </text>
         ))}
 
-        <path className="line-income" d={makePath(incomeDaily)} />
-        <path className="line-expense" d={makePath(expenseDaily)} />
-
-        {incomeDaily.map((v, i) => (
-          <circle key={`i-${i}`} className="line-point-income" cx={x(i)} cy={y(v)} r={v ? 2.8 : 0} />
-        ))}
-        {expenseDaily.map((v, i) => (
-          <circle key={`e-${i}`} className="line-point-expense" cx={x(i)} cy={y(v)} r={v ? 2.8 : 0} />
+        {series.map((s) => (
+          <path key={s.key} className={s.cls} d={makePath(s.values)} />
         ))}
       </svg>
     )
@@ -1123,10 +1189,8 @@ function CoupleApp() {
           <span className="sign-out-label">ログアウト</span>
         </button>
         <TopActionBar
-          onAddIncome={() => openIncomeModal()}
-          onAddExpense={() => openExpenseModal()}
-          onAddSchedule={() => openScheduleModal()}
-          onAddPlace={() => openPlaceModal()}
+          onAddIncome={() => openIncomeModal(null, getLocalDateString())}
+          onAddExpense={() => openExpenseModal(null, getLocalDateString())}
         />
 
         <div className="content-area">
@@ -1139,7 +1203,7 @@ function CoupleApp() {
               </div>
 
               <button className="expense-banner" onClick={openSummaryModal}>
-                <div className="expense-banner-label">今月の支出合計 　タップで詳細 ›</div>
+                <div className="expense-banner-label">今月の支出合計 タップで詳細 ›</div>
                 <div className="expense-banner-amount">¥{fmtNum(monthlyExpense)}</div>
               </button>
 
@@ -1195,7 +1259,7 @@ function CoupleApp() {
                   <div className="tx-list">
                     {monthTransactions.length ? (
                       [...monthTransactions]
-                        .sort((a, b) => new Date(b.date) - new Date(a.date))
+                        .sort((a, b) => parseLocalDateString(b.date) - parseLocalDateString(a.date))
                         .map((tx) => (
                           <div
                             className="tx-item"
@@ -1219,6 +1283,9 @@ function CoupleApp() {
                 </div>
               ) : (
                 <div className="section" style={{ marginTop: 12 }}>
+                  <button className="schedule-add-btn" onClick={() => openScheduleModal(null, getLocalDateString())}>
+                    予定を追加
+                  </button>
                   <div className="sch-list">
                     {monthSchedules.length ? (
                       monthSchedules.map((s) => (
@@ -1245,6 +1312,9 @@ function CoupleApp() {
             <div className="screen">
               <div className="screen-header">
                 <h2 className="screen-title">行きたい場所</h2>
+                <button className="place-add-btn" onClick={() => openPlaceModal()}>
+                  行きたい場所を追加
+                </button>
                 <div className="filter-tabs">
                   <button className={`filter-tab${placeFilter === 'all' ? ' active' : ''}`} onClick={() => setPlaceFilter('all')}>すべて</button>
                   <button className={`filter-tab${placeFilter === 'want' ? ' active' : ''}`} onClick={() => setPlaceFilter('want')}>行きたい</button>
@@ -1281,33 +1351,41 @@ function CoupleApp() {
             <div className="screen">
               <div className="screen-header">
                 <h2 className="screen-title">分析</h2>
-                <p className="screen-sub">{analysisData.m + 1}月{analysisData.d}日時点 vs 先月同日比較</p>
+                <p className="screen-sub">
+                  {analysisData.currentPeriodLabel} vs {analysisData.previousPeriodLabel}
+                </p>
               </div>
 
-              <div className="compare-row">
-                <div className="compare-card this-month">
-                  <div className="cmp-label">今月</div>
-                  <div className="cmp-income">収入 ¥{fmtNum(analysisData.thisIncome)}</div>
-                  <div className="cmp-expense">支出 ¥{fmtNum(analysisData.thisExpense)}</div>
-                  <div className={`cmp-balance ${analysisData.thisBalance >= 0 ? 'pos' : 'neg'}`}>
-                    {analysisData.thisBalance >= 0 ? '+' : ''}¥{fmtNum(analysisData.thisBalance)}
+              <div className="analysis-summary-grid">
+                {analysisData.comparisonRows.map((row) => (
+                  <div className={`analysis-card ${row.key}`} key={row.key}>
+                    <div className="analysis-card-title">{row.label}</div>
+                    <div className="analysis-card-line">
+                      <span>{analysisData.currentLabel}</span>
+                      <strong>¥{fmtNum(row.current)}</strong>
+                    </div>
+                    <div className="analysis-card-line muted">
+                      <span>{analysisData.previousLabel}同期間</span>
+                      <strong>¥{fmtNum(row.previous)}</strong>
+                    </div>
+                    <div className={`analysis-card-diff ${row.diff >= 0 ? 'pos' : 'neg'}`}>
+                      <span>差額</span>
+                      <strong>{row.diff >= 0 ? '+' : ''}¥{fmtNum(row.diff)}</strong>
+                    </div>
+                    <div className="analysis-card-rate">増減率 {formatRate(row.rate)}</div>
                   </div>
-                </div>
-                <div className="vs-badge">VS</div>
-                <div className="compare-card last-month">
-                  <div className="cmp-label">先月</div>
-                  <div className="cmp-income">収入 ¥{fmtNum(analysisData.lastIncome)}</div>
-                  <div className="cmp-expense">支出 ¥{fmtNum(analysisData.lastExpense)}</div>
-                  <div className={`cmp-balance ${analysisData.lastBalance >= 0 ? 'pos' : 'neg'}`}>
-                    {analysisData.lastBalance >= 0 ? '+' : ''}¥{fmtNum(analysisData.lastBalance)}
-                  </div>
-                </div>
+                ))}
               </div>
 
               <div className="line-chart-wrap">
-                <div className="chart-legend" style={{ marginBottom: 8 }}>
-                  <span className="legend legend-this" style={{ color: 'var(--blue)' }}>■ 収入</span>
-                  <span className="legend legend-last" style={{ color: 'var(--red)' }}>■ 支出</span>
+                <h3 className="sec-title">日別の累積推移</h3>
+                <div className="chart-legend cumulative-legend">
+                  <span className="legend legend-income-current">■ 今月の累積収入</span>
+                  <span className="legend legend-income-last">■ 先月の累積収入</span>
+                  <span className="legend legend-expense-current">■ 今月の累積支出</span>
+                  <span className="legend legend-expense-last">■ 先月の累積支出</span>
+                  <span className="legend legend-balance-current">■ 今月の累積収支差</span>
+                  <span className="legend legend-balance-last">■ 先月の累積収支差</span>
                 </div>
                 {renderLineChart()}
               </div>
@@ -1437,16 +1515,18 @@ function CoupleApp() {
           <TransactionDetailModal
             tx={modal.tx}
             onClose={() => setModal(null)}
-            onEdit={() => openIncomeModal(
-              modal.tx.type === 'income' ? modal.tx : null,
-              null,
-            ) || (modal.tx.type === 'expense' && openExpenseModal(modal.tx))}
+            onEdit={() => (
+              modal.tx.type === 'income'
+                ? openIncomeModal(modal.tx)
+                : openExpenseModal(modal.tx)
+            )}
             onDelete={() => setModal({
               type: 'confirm',
               title: '明細を削除',
               message: `「${modal.tx.memo || modal.tx.category}」を削除しますか？\nこの操作は取り消せません。`,
               onConfirm: () => {
                 setTransactions((prev) => prev.filter((t) => t.id !== modal.tx.id))
+                showToast('明細を削除しました', modal.tx.memo || modal.tx.category)
                 setModal(null)
               },
             })}
@@ -1464,6 +1544,7 @@ function CoupleApp() {
               message: `「${modal.schedule.title}」を削除しますか？`,
               onConfirm: () => {
                 setSchedules((prev) => prev.filter((s) => s.id !== modal.schedule.id))
+                showToast('予定を削除しました', modal.schedule.title)
                 setModal(null)
               },
             })}
@@ -1481,15 +1562,17 @@ function CoupleApp() {
               message: `「${modal.place.name}」を削除しますか？`,
               onConfirm: () => {
                 setPlaces((prev) => prev.filter((p) => p.id !== modal.place.id))
+                showToast('行きたい場所を削除しました', modal.place.name)
                 setModal(null)
               },
             })}
             onStampVisited={() => {
               setPlaces((prev) => prev.map((p) => (
                 p.id === modal.place.id
-                  ? { ...p, status: 'visited', visitedDate: TODAY.toISOString().slice(0, 10), updatedAt: nowIso() }
+                  ? { ...p, status: 'visited', visitedDate: getLocalDateString(), updatedAt: nowIso() }
                   : p
               )))
+              showToast('行った場所にしました', modal.place.name)
               setModal(null)
             }}
           />
@@ -1505,7 +1588,6 @@ function CoupleApp() {
             onAddIncome={() => openIncomeModal(null, modal.dateStr)}
             onAddExpense={() => openExpenseModal(null, modal.dateStr)}
             onAddSchedule={() => openScheduleModal(null, modal.dateStr)}
-            onAddPlace={() => openPlaceModal(null, modal.dateStr)}
           />
         )}
 
@@ -1602,6 +1684,7 @@ function CoupleApp() {
             onConfirm={modal.onConfirm}
           />
         )}
+        <Toast toast={toast} />
       </div>
     </div>
   )
